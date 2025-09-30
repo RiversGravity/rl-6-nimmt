@@ -1,74 +1,158 @@
 # Beating *6 nimmt!* with reinforcement learning
 
+Leverage reinforcement learning, Monte-Carlo search, and tournament-style self-play to build agents that master the classic card game *6 nimmt!* This repository packages an OpenAI Gym environment, a family of agents, and utilities for orchestrating large-scale experiments so you can explore meta-learning strategies and evaluate emergent play.
 
-### 6 nimmt!
+> ### Quick Start
+> | Step | Command |
+> | --- | --- |
+> | Clone the project | `git clone git@github.com:johannbrehmer/rl-6nimmt.git` |
+> | Create the Conda environment | `conda env create -f environment.yml` |
+> | Activate tools | `conda activate rl` |
+> | Validate the install | `pytest` |
+> | Explore workflows | `jupyter notebook experiments/simple_tournament.ipynb` |
 
-[6 nimmt!](https://boardgamegeek.com/boardgame/432/6-nimmt) is an award-winning card game for two to ten players from 1994. Quoting [Wikipedia](https://en.wikipedia.org/wiki/6_Nimmt!):
-> The game has 104 cards, each bearing a number and one to seven bull's heads symbols that represent penalty points. A round of ten turns is played where all players place one card of their choice onto the table. The placed cards are arranged on four rows according to fixed rules. If placed onto a row that already has five cards then the player receives those five cards, which count as penalty points that are totaled up at the end of the round.
+## Project Overview
 
-6 nimmt! is a competitive game of incomplete information and a large amount of stochasticity. Playing well requires a fair bit of planning. The simultaneous game play lends itself to mind games and bluffing, while some long-term strategy is necessary to avoid ending up in difficult end-game positions.
+### What game are we solving?
+[6 nimmt!](https://boardgamegeek.com/boardgame/432/6-nimmt) is an award-winning card game that mixes hidden information, stochasticity, and timing. Each round players simultaneously reveal cards and collect "Hornochsen" penalty points whenever they complete a row. Skilled play hinges on bluffing, anticipatory planning, and adaptable heuristics—making it a rich benchmark for reinforcement learning.
 
-We implemented a slightly simplified version of 6 nimmt! as an [OpenAI gym](https://gym.openai.com/) environment. Unlike in the original game, when playing a lower card than the last card on all stacks, the player cannot freely choose which stack to replace, but instead will always take the stack with the smallest number of penalty points.
+### Core building blocks
 
+| Module | Role in the system | Highlights |
+| --- | --- | --- |
+| `rl_6_nimmt/env.py` | Implements `SechsNimmtEnv`, an OpenAI Gym-compatible environment that deals cards, enforces move legality, and scores penalty rows. | Configurable deck size, row thresholds, and verbose rendering for debugging. |
+| `rl_6_nimmt/agents/` | Houses neural and search-based agents including REINFORCE, ACER, DQN variants, Monte-Carlo search, and a human interface. | Shared `Agent` base class, PyTorch models, card-memory utilities, and drop-in registration through `AGENTS`. |
+| `rl_6_nimmt/tournament.py` | Coordinates population-based training via the `Tournament` class with dynamic roster management, baseline evaluation, and ELO tracking. | Automates matchmaking, logs tournament/baseline scores, and supports evolutionary cloning with configurable metrics. |
 
-### RL agents
+### Why tournaments?
+Population-based self-play helps agents adapt to a shifting meta-game. `Tournament.play_game` continuously pits active models against each other, promotes top performers, and benchmarks progress against static baselines. This closed loop encourages robustness and uncovers diverse strategies more reliably than single-agent training.
 
-So far we have implemented the following agents:
-- **REINFORCE**: The original policy gradient algorithm.
-- **ACER**: An off-policy actor-critic agent with truncated importance sampling with bias correction. Unlike [the original ACER](https://arxiv.org/abs/1611.01224), our implementation does not use trust region policy optimization or dueling stochastic networks.
-- **D3QN**: A deep dueling double Q-learning algorithm with priority replay buffer and noisy nets. This has most elements of [Rainbow](https://arxiv.org/abs/1710.02298).
-- **MCS**: A Monte-Carlo search in which all actions are sampled uniformly (no neural network involved).
-- **Alpha0.5**: Monte-Carlo tree search guided by a neural policy and PUCT. Inspired by [AlphaZero](https://arxiv.org/abs/1712.01815) and similar algorithms, modified for the incomplete information scenario of 6 nimmt!.
-- **Random**: A random policy baseline.
-- **Human**: Interface for human players. 
+## Getting Started
 
+### Prerequisites
+- **Python:** Tested with Python 3.8+ (installed via [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/)).
+- **CUDA (optional):** GPU acceleration is supported for neural agents but not required.
+- **System packages:** `git`, `make`, and build tooling needed for PyTorch (installed automatically through Conda on Linux/macOS).
 
-### Results
+> 💡 *Tip:* If you prefer [mamba](https://mamba.readthedocs.io/) you can substitute `mamba` for `conda` in the commands below for faster solves.
 
-As a first test, we ran a simple self-play tournament. Starting with five untrained agents, we played 4000 games in total. For each game we randomly selected two, three, or four agents to play (and learn). Every 400 games we cloned the best-performing agent and kicked out some of the poorer-performing ones. In the end we just kept the best instance of each agent type.
-
-Results over all games:
-
-| Agent | Games played | Mean score | Win fraction | ELO |
-|---|---|---|---|---|
-| **Alpha0.5** |  2246 |      -7.79 |         0.42 | 1806 
-| **MCS** |  2314 |      -8.06 |         0.40 | 1745 
-| **ACER** |  1408 |     -12.28 |         0.18 | 1629 | 
-| **D3QN** |   1151 |     -13.32 |         0.17 | 1577 |
-| **Random** |  1382 |     -13.49 |         0.19 | 1556 
-
-This is how the performance (measured in ELO) of the models developed during the course of the tournament:
-
-![ELO vs number of games played](experiments/elo.png)
-
-Monte-Carlo tree search is crucial and leads to strong players. The model-free RL agents, on the other hand,  struggle to even clearly outperform the random baseline. Due to the stochastic nature of the game, the win probabilities and ELO differences are not nearly as drastic as they could be, say, for chess. Note that we haven't tuned any of the many hyperparameters.
-
-After this self-play phase, the Alpha0.5 agent faced Merle, one of the best 6 nimmt! players in our group of friends, for 5 games. These are the scores:
-
-| Game | 1 | 2 | 3 | 4 | 5 | Sum |
-|---|---|---|---|---|---|---|
-| **Merle** | -10 | -16 | **-11** | **-3** | **-4** | -44 |
-| **Alpha0.5** | **-1** | **-3** | -14 | -8 | -6 | **-32** |
-
-
-### Running the code
-
-Assuming you have anaconda installed, clone the repo with
-
-```
+### Create and activate the environment
+```bash
+# Clone the repository
 git clone git@github.com:johannbrehmer/rl-6nimmt.git
-```
+cd rl-6nimmt
 
-and create a virtual environment with
-
-```
+# Reproduce the curated environment
 conda env create -f environment.yml
 conda activate rl
 ```
 
-Both agent self-play and games between a human player and trained agents are demonstrated in [simple_tournament.ipynb](experiments/simple_tournament.ipynb).
+### Verify your installation
+Before launching long-running training, smoke-test the setup:
+```bash
+# Run the unit suite (env dynamics, agent interfaces, utilities)
+pytest
 
+# Optionally simulate a quick random match-up
+python - <<'PY'
+from rl_6_nimmt.tournament import Tournament
+from rl_6_nimmt.agents import DrunkHamster
+
+arena = Tournament()
+arena.add_player("random_a", DrunkHamster())
+arena.add_player("random_b", DrunkHamster())
+arena.play_game(num_players=2)
+print("Scores:", arena.tournament_scores)
+PY
+```
+Successful execution confirms Gym registration, PyTorch dependencies, and tournament plumbing are operational.
+
+## Train Your Own Agents
+
+Follow this recipe to launch self-play experiments that evolve increasingly strong agents:
+
+1. **Initialize a tournament population.** Combine learning agents with baselines to seed the meta-game.
+   ```python
+   from rl_6_nimmt.tournament import Tournament
+   from rl_6_nimmt.agents import PolicyMCSAgent, BatchedACERAgent, DrunkHamster
+
+   tournament = Tournament(
+       min_players=2,
+       max_players=4,
+       baseline_agents=[DrunkHamster()],
+       baseline_num_games=5,
+       elo_initial=1600,
+       elo_k=24,
+   )
+
+   tournament.add_player("pmcs_seed", PolicyMCSAgent(mc_per_card=20))
+   tournament.add_player("acer_seed", BatchedACERAgent())
+   tournament.add_player("random_baseline", DrunkHamster())
+   ```
+
+2. **Play games and learn.** Use `Tournament.play_game` to drive simulated matches. Agents invoke their `learn` methods after every environment step.
+   ```python
+   for generation in range(20):
+       for _ in range(200):
+           tournament.play_game()  # scores + ELO are updated internally
+       # Periodically print KPIs
+       print(generation, tournament.elos["pmcs_seed"][-1])
+   ```
+
+3. **Evolve the roster.** Clone top performers and retire weak agents using built-in heuristics.
+   ```python
+   tournament.evolve(copies=(2, 1), max_players=6, max_per_descendant=2, metric="elo")
+   ```
+
+4. **Persist checkpoints.** Agents are standard PyTorch modules; save state dicts or entire objects for later evaluation.
+   ```python
+   from pathlib import Path
+   import torch
+
+   checkpoint_dir = Path("experiments/checkpoints")
+   checkpoint_dir.mkdir(parents=True, exist_ok=True)
+   torch.save(tournament.agents["pmcs_seed"].state_dict(), checkpoint_dir / "pmcs_seed.pt")
+   ```
+
+5. **Automate with notebooks or scripts.** The `experiments/simple_tournament.ipynb` notebook demonstrates an end-to-end population loop and plotting utilities. For scripted runs, adapt the snippet above or explore `experiments/debug_*.py` for agent-specific debugging.
+
+> 📈 **Resource planning:** Expect 1–2 GB GPU memory per neural agent (policy gradients, DQN variants) and moderate CPU usage from Monte-Carlo rollouts. Control runtime with knobs like `mc_per_card`, `baseline_condition`, and the tournament loop length.
+
+## Evaluate & Play
+
+### Track competitive progress
+- **ELO trends:** Access `tournament.elos[name]` to chart historical strength. `experiments/elo.png` and `elo.pdf` provide example plots that aggregate thousands of games.
+- **Baseline matches:** Configure `baseline_agents` and `baseline_num_games` to evaluate every *n*th game (`baseline_condition`). Metrics accumulate in `baseline_scores`, `baseline_positions`, and `baseline_wins` for longitudinal comparisons.
+- **Experiment artifacts:** Log your own runs under `experiments/` (e.g., `experiments/checkpoints/`, `experiments/metrics.csv`) to consolidate configs, seeds, and trained weights.
+
+### Run human-vs-agent sessions
+- Launch interactive matches by pairing the human interface with any trained agent:
+  ```python
+  import torch
+  from rl_6_nimmt.play import GameSession
+  from rl_6_nimmt.agents import Human, PolicyMCSAgent
+
+  human = Human()
+  champion = PolicyMCSAgent()
+  champion.load_state_dict(torch.load("experiments/checkpoints/pmcs_champion.pt"))
+
+  session = GameSession(human, champion)
+  session.play_game(render=True)
+  ```
+- Customize the experience by tweaking environment parameters (e.g., `SechsNimmtEnv(num_players=5, threshold=5)`), logging verbosity, or replacing agents mid-session.
+- Troubleshooting tips:
+  - If rendering is quiet, ensure `logging` is configured (e.g., `logging.basicConfig(level=logging.INFO)`).
+  - On headless servers, run without `render=True` and stream moves via logs.
+
+## Configuration Cheat Sheet
+
+| Category | Key knob | Effect |
+| --- | --- | --- |
+| Environment | `num_players`, `num_rows`, `threshold`, `include_summaries` | Adjusts game difficulty, observation richness, and combinatorics. |
+| Agents | `mc_per_card`, `mc_max`, network `hidden_sizes`, exploration schedules | Balance search depth vs. compute, tune neural capacity, and control randomness. |
+| Tournament | `baseline_condition`, `elo_k`, `copies`, `max_players` | Frequency of evaluation, rating sensitivity, evolutionary pressure, and population size. |
+
+Keep detailed notes alongside artifacts in `experiments/`—meta-learning thrives on reproducibility and disciplined comparisons across seeds and hyperparameters.
 
 ## Contributors
-
-Put together by Johann Brehmer and Marcel Gutsche.
+Created by Johann Brehmer and Marcel Gutsche.
